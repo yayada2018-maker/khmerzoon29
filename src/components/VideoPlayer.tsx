@@ -79,105 +79,9 @@ const normalizeType = (rawType?: string, url?: string): "mp4" | "hls" | "dash" |
   if (u.endsWith(".mpd")) return "dash";
   if (u.endsWith(".mp4")) return "mp4";
   if (u.includes("youtube.com") || u.includes("youtu.be") || u.includes("player.") || u.includes("embed")) return "iframe";
-  // VK Video URLs should be treated as iframe embeds
-  if (u.includes("vk.com/video") || u.includes("vk.ru/video")) return "iframe";
   return "hls";
 };
 
-// Convert VK Video URL to embed format - Enhanced for mobile/native app compatibility
-// CRITICAL: VK requires specific domain and parameters for mobile playback
-const convertVkVideoUrl = (url: string): string => {
-  if (!url) return url;
-  
-  const lowerUrl = url.toLowerCase();
-  
-  // Already in embed format - ensure HTTPS, use vk.com domain, and add quality
-  if (lowerUrl.includes('video_ext.php')) {
-    let embedUrl = url.replace(/^http:/, 'https:');
-    // CRITICAL: Use vk.com domain - vkvideo.ru causes ERR_CONNECTION_REFUSED on mobile
-    embedUrl = embedUrl.replace(/vkvideo\.ru/gi, 'vk.com');
-    // Parse existing URL and rebuild with required params
-    try {
-      const urlObj = new URL(embedUrl);
-      urlObj.searchParams.set('hd', '2');
-      urlObj.searchParams.set('autoplay', '0');
-      urlObj.searchParams.set('js_api', '1');
-      return urlObj.toString();
-    } catch {
-      // Fallback for invalid URLs
-      if (!embedUrl.includes('hd=')) embedUrl += (embedUrl.includes('?') ? '&' : '?') + 'hd=2';
-      if (!embedUrl.includes('autoplay=')) embedUrl += '&autoplay=0';
-      return embedUrl;
-    }
-  }
-  
-  // Parse standard VK video URL: vk.com/video-123_456 or vkvideo.ru/video-123_456
-  const vkVideoMatch = url.match(/(?:vk\.com|vk\.ru|vkvideo\.ru)\/video(-?\d+)_(\d+)/i);
-  if (vkVideoMatch) {
-    const oid = vkVideoMatch[1];
-    const id = vkVideoMatch[2];
-    
-    // Extract hash from URL if present
-    const hashMatch = url.match(/[?&]hash=([a-f0-9]+)/i);
-    const hash = hashMatch ? hashMatch[1] : '';
-    
-    // Also check for access_key in URL format
-    const accessKeyMatch = url.match(/video-?\d+_\d+_([a-f0-9]+)/i);
-    const accessKey = accessKeyMatch && !hash ? accessKeyMatch[1] : hash;
-    
-    const params = new URLSearchParams({ oid, id, hd: '2', autoplay: '0', js_api: '1' });
-    if (accessKey) params.set('hash', accessKey);
-    
-    return `https://vk.com/video_ext.php?${params.toString()}`;
-  }
-  
-  // Check for vk.com/video?z=video-123_456 format
-  const vkVideoZMatch = url.match(/(?:vk\.com|vk\.ru)\/video\?z=video(-?\d+)_(\d+)/i);
-  if (vkVideoZMatch) {
-    const oid = vkVideoZMatch[1];
-    const id = vkVideoZMatch[2];
-    const hashMatch = url.match(/[?&]hash=([a-f0-9]+)/i);
-    const hash = hashMatch ? hashMatch[1] : '';
-    
-    const params = new URLSearchParams({ oid, id, hd: '2', autoplay: '0', js_api: '1' });
-    if (hash) params.set('hash', hash);
-    
-    return `https://vk.com/video_ext.php?${params.toString()}`;
-  }
-  
-  return url;
-};
-
-// Fetch VK embed URL using the API (for "Anyone with the link" videos)
-const fetchVkEmbedUrl = async (url: string): Promise<string> => {
-  try {
-    // Check if it's a VK video URL
-    const isVkUrl = /(?:vk\.com|vk\.ru|vkvideo\.ru)\/video/i.test(url);
-    if (!isVkUrl) return convertVkVideoUrl(url);
-    
-    console.log('Fetching VK embed URL via API for:', url);
-    
-    const { data, error } = await supabase.functions.invoke('vk-video-api', {
-      body: { videoUrl: url }
-    });
-    
-    if (error) {
-      console.error('VK API error:', error);
-      return convertVkVideoUrl(url);
-    }
-    
-    if (data?.success && data?.embedUrl) {
-      console.log('VK API returned embed URL:', data.embedUrl);
-      return data.embedUrl;
-    }
-    
-    console.warn('VK API did not return embed URL, using fallback');
-    return convertVkVideoUrl(url);
-  } catch (error) {
-    console.error('Error fetching VK embed URL:', error);
-    return convertVkVideoUrl(url);
-  }
-};
 
 const getMp4Url = (mp4Urls: Record<string, string>, quality: string) => {
   if (mp4Urls[quality]) return mp4Urls[quality];
@@ -297,8 +201,6 @@ const VideoPlayer = ({
   const [currentQuality, setCurrentQuality] = useState("720p");
   const [availableQualities, setAvailableQualities] = useState<string[]>([]);
   const [currentServer, setCurrentServer] = useState<VideoSource | null>(null);
-  const [resolvedVkEmbedUrl, setResolvedVkEmbedUrl] = useState<string | null>(null);
-  const [isResolvingVkUrl, setIsResolvingVkUrl] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [showCenterIcon, setShowCenterIcon] = useState(false);
@@ -742,41 +644,6 @@ const VideoPlayer = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayedSources, currentEpisodeId, accessType, accessLoading, hasAccess]);
-
-  // Resolve VK video URLs using the API for "Anyone with the link" videos
-  useEffect(() => {
-    const resolveVkUrl = async () => {
-      if (!currentServer?.url) {
-        setResolvedVkEmbedUrl(null);
-        return;
-      }
-
-      const sourceType = normalizeType(currentServer.source_type, currentServer.url);
-      const isVkVideo = /(?:vk\.com|vk\.ru|vkvideo\.ru)\/video/i.test(currentServer.url);
-      
-      // Only resolve VK video URLs that are iframe type
-      if ((sourceType === 'iframe' || sourceType === 'embed') && isVkVideo) {
-        console.log('Resolving VK video URL:', currentServer.url);
-        setIsResolvingVkUrl(true);
-        
-        try {
-          const embedUrl = await fetchVkEmbedUrl(currentServer.url);
-          console.log('Resolved VK embed URL:', embedUrl);
-          setResolvedVkEmbedUrl(embedUrl);
-        } catch (error) {
-          console.error('Failed to resolve VK URL:', error);
-          // Fall back to basic conversion
-          setResolvedVkEmbedUrl(convertVkVideoUrl(currentServer.url));
-        } finally {
-          setIsResolvingVkUrl(false);
-        }
-      } else {
-        setResolvedVkEmbedUrl(null);
-      }
-    };
-
-    resolveVkUrl();
-  }, [currentServer?.url, currentServer?.source_type]);
 
   const cleanupShakaPlayer = async () => {
     if (shakaPlayerRef.current) {
@@ -2020,21 +1887,16 @@ const VideoPlayer = ({
       )}
 
       {/* Iframe Element - Only load when user has access and server is not restricted */}
-      {/* Supports VK Video URLs with automatic API-based resolution for "Anyone with the link" videos */}
-      {/* CRITICAL: VK requires specific iframe config to avoid ERR_CONNECTION_REFUSED on mobile */}
       {(sourceType === "embed" || sourceType === "iframe") && !isLocked && !accessLoading && !allSourcesMobileOnly && !allSourcesWebOnly && !isCurrentServerRestricted && (
         <iframe
           ref={iframeRef}
-          src={resolvedVkEmbedUrl || convertVkVideoUrl(currentServer.url)}
+          src={currentServer.url}
           className="w-full h-full"
           allowFullScreen
-          // Extended permissions for VK video on mobile/native apps
-          allow="autoplay; encrypted-media; fullscreen; picture-in-picture; accelerometer; gyroscope; clipboard-write; web-share"
+          allow="autoplay; encrypted-media; fullscreen; picture-in-picture; accelerometer; gyroscope"
           style={{ border: 'none' }}
-          // CRITICAL: sandbox must allow top-navigation for VK player to work on mobile
-          sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox allow-forms allow-top-navigation-by-user-activation"
-          // Use origin for referrer to avoid blocking by VK's security
-          referrerPolicy="origin"
+          sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox allow-forms"
+          referrerPolicy="strict-origin-when-cross-origin"
           loading="eager"
         />
       )}
