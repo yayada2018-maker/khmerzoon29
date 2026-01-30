@@ -113,15 +113,15 @@ const queryClient = new QueryClient();
 
 const App = () => {
   return (
-  <QueryClientProvider client={queryClient}>
-    <ThemeProvider>
-      <LanguageProvider>
-        <SiteSettingsProvider>
-          <TooltipProvider>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <LanguageProvider>
+          <SiteSettingsProvider>
+            <TooltipProvider>
               <BrowserRouter>
-              <AuthProvider>
-              <MaintenanceWrapper>
-              <CustomScriptsLoader />
+                <AuthProvider>
+                  <MaintenanceWrapper>
+                    <CustomScriptsLoader />
             <ContentProtection />
             {/* <StandaloneMode /> */}
             <ThemeStatusBar />
@@ -232,15 +232,15 @@ const App = () => {
             <Route path="/sitemap" element={<Sitemap />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
-          </Routes>
-          </MaintenanceWrapper>
-          </AuthProvider>
-        </BrowserRouter>
-      </TooltipProvider>
-      </SiteSettingsProvider>
-      </LanguageProvider>
-    </ThemeProvider>
-  </QueryClientProvider>
+                  </Routes>
+                  </MaintenanceWrapper>
+                </AuthProvider>
+              </BrowserRouter>
+            </TooltipProvider>
+          </SiteSettingsProvider>
+        </LanguageProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 };
 
