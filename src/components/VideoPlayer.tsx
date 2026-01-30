@@ -42,6 +42,7 @@ import AppLockOverlay from '@/components/AppLockOverlay';
 import { useAdMobRewarded } from '@/hooks/useAdMobRewarded';
 import { SkipButton } from '@/components/video/SkipButton';
 import { useSkipSegments } from '@/hooks/useSkipSegments';
+import PreviewOnlyEmbed, { isRussianVideoPlatform } from '@/components/PreviewOnlyEmbed';
 
 interface VideoPlayerProps {
   videoSources: VideoSource[];
@@ -1888,17 +1889,28 @@ const VideoPlayer = ({
 
       {/* Iframe Element - Only load when user has access and server is not restricted */}
       {(sourceType === "embed" || sourceType === "iframe") && !isLocked && !accessLoading && !allSourcesMobileOnly && !allSourcesWebOnly && !isCurrentServerRestricted && (
-        <iframe
-          ref={iframeRef}
-          src={currentServer.url}
-          className="w-full h-full"
-          allowFullScreen
-          allow="autoplay; encrypted-media; fullscreen; picture-in-picture; accelerometer; gyroscope"
-          style={{ border: 'none' }}
-          sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox allow-forms"
-          referrerPolicy="strict-origin-when-cross-origin"
-          loading="eager"
-        />
+        isRussianVideoPlatform(currentServer?.url || '') ? (
+          // Russian platforms (VK, OK.ru, Yandex) - render as non-interactive preview
+          <PreviewOnlyEmbed
+            src={currentServer.url}
+            title={title}
+            showBadge={true}
+            className="w-full h-full rounded-none"
+          />
+        ) : (
+          // Standard interactive iframe for other sources
+          <iframe
+            ref={iframeRef}
+            src={currentServer.url}
+            className="w-full h-full"
+            allowFullScreen
+            allow="autoplay; encrypted-media; fullscreen; picture-in-picture; accelerometer; gyroscope"
+            style={{ border: 'none' }}
+            sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox allow-forms"
+            referrerPolicy="strict-origin-when-cross-origin"
+            loading="eager"
+          />
+        )
       )}
       
       {/* Lock overlay for restricted server selection */}
