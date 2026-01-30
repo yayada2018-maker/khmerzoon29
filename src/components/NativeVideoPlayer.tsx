@@ -120,13 +120,9 @@ const normalizeType = (rawType?: string, url?: string): "mp4" | "hls" | "iframe"
     return 'mp4';
   }
   
-  // Check for embed/iframe sources
+// Check for embed/iframe sources
   if (u.includes("youtube.com") || u.includes("youtu.be") || u.includes("player.") || u.includes("embed")) {
     logNativeDebug('normalizeType', 'iframe detected (youtube/embed)');
-    return "iframe";
-  }
-  if (u.includes("vk.com/video") || u.includes("vk.ru/video") || u.includes("video_ext.php")) {
-    logNativeDebug('normalizeType', 'iframe detected (vk)');
     return "iframe";
   }
   
@@ -140,76 +136,6 @@ const normalizeType = (rawType?: string, url?: string): "mp4" | "hls" | "iframe"
   return "iframe";
 };
 
-// Convert VK Video URL to embed format - Enhanced for mobile/native app compatibility
-// CRITICAL: VK requires specific domain and parameters for mobile playback
-const convertVkVideoUrl = (url: string): string => {
-  if (!url) return url;
-  const lowerUrl = url.toLowerCase();
-  
-  // Already in embed format - ensure proper parameters for mobile
-  if (lowerUrl.includes('video_ext.php')) {
-    let embedUrl = url.replace(/^http:/, 'https:');
-    // CRITICAL: Use vk.com domain - vkvideo.ru causes ERR_CONNECTION_REFUSED on mobile
-    embedUrl = embedUrl.replace(/vkvideo\.ru/gi, 'vk.com');
-    // Parse existing URL and rebuild with required params
-    const urlObj = new URL(embedUrl);
-    // Set required params for mobile playback
-    urlObj.searchParams.set('hd', '2');
-    urlObj.searchParams.set('autoplay', '0');
-    urlObj.searchParams.set('js_api', '1');
-    // Don't add referrer tracking that causes blocks
-    return urlObj.toString();
-  }
-  
-  // Parse standard VK video URL: vk.com/video-123_456 or vkvideo.ru/video-123_456
-  const vkVideoMatch = url.match(/(?:vk\.com|vk\.ru|vkvideo\.ru)\/video(-?\d+)_(\d+)/i);
-  if (vkVideoMatch) {
-    const oid = vkVideoMatch[1];
-    const id = vkVideoMatch[2];
-    
-    // Extract hash from URL if present (required for "Anyone with the link" videos)
-    const hashMatch = url.match(/[?&]hash=([a-f0-9]+)/i);
-    const hash = hashMatch ? hashMatch[1] : '';
-    
-    // Also check for access_key in URL format: video-123_456_accesskey
-    const accessKeyMatch = url.match(/video-?\d+_\d+_([a-f0-9]+)/i);
-    const accessKey = accessKeyMatch && !hash ? accessKeyMatch[1] : hash;
-    
-    // Use vk.com domain (vkvideo.ru causes connection issues on mobile)
-    const params = new URLSearchParams({
-      oid,
-      id,
-      hd: '2',
-      autoplay: '0',
-      js_api: '1',
-    });
-    if (accessKey) params.set('hash', accessKey);
-    
-    return `https://vk.com/video_ext.php?${params.toString()}`;
-  }
-  
-  // Check for vk.com/video?z=video-123_456 format
-  const vkVideoZMatch = url.match(/(?:vk\.com|vk\.ru)\/video\?z=video(-?\d+)_(\d+)/i);
-  if (vkVideoZMatch) {
-    const oid = vkVideoZMatch[1];
-    const id = vkVideoZMatch[2];
-    const hashMatch = url.match(/[?&]hash=([a-f0-9]+)/i);
-    const hash = hashMatch ? hashMatch[1] : '';
-    
-    const params = new URLSearchParams({
-      oid,
-      id,
-      hd: '2',
-      autoplay: '0',
-      js_api: '1',
-    });
-    if (hash) params.set('hash', hash);
-    
-    return `https://vk.com/video_ext.php?${params.toString()}`;
-  }
-  
-  return url;
-};
 
 const NativeVideoPlayer = ({ 
   videoSources, 
@@ -1331,21 +1257,17 @@ const NativeVideoPlayer = ({
           />
         )}
 
-        {/* Iframe Element for embed sources - Enhanced for VK Video mobile/native compatibility */}
-        {/* CRITICAL: VK requires specific iframe config to avoid ERR_CONNECTION_REFUSED on mobile */}
+        {/* Iframe Element for embed sources (YouTube, etc.) */}
         {sourceType === 'iframe' && !isLocked && !accessLoading && !allSourcesWebOnly && (
           <iframe
             ref={iframeRef}
-            src={convertVkVideoUrl(currentServer.url)}
+            src={currentServer.url}
             className="w-full h-full"
             allowFullScreen
-            // Extended permissions for VK video on mobile/native apps
-            allow="autoplay; encrypted-media; fullscreen; picture-in-picture; accelerometer; gyroscope; clipboard-write; web-share"
+            allow="autoplay; encrypted-media; fullscreen; picture-in-picture; accelerometer; gyroscope"
             style={{ border: 'none' }}
-            // CRITICAL: sandbox must allow top-navigation for VK player to work on mobile
-            sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox allow-forms allow-top-navigation-by-user-activation"
-            // Use origin for referrer to avoid blocking by VK's security
-            referrerPolicy="origin"
+            sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox allow-forms"
+            referrerPolicy="strict-origin-when-cross-origin"
             loading="eager"
           />
         )}
